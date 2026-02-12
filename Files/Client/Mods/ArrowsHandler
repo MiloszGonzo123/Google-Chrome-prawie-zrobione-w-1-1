@@ -1,0 +1,46 @@
+--[[
+
+skrypt który handluje strzałki (back / forward)
+
+--]]
+local module = {}
+
+module.History = {}
+module.CurrentIndex = 0
+
+-- Wejście na nową stronę
+function module.Navigate(url)
+	if not url then return end
+
+	for i = #module.History, module.CurrentIndex + 1, -1 do
+		table.remove(module.History, i)
+	end
+
+	table.insert(module.History, tostring(url))
+	module.CurrentIndex += 1
+end
+
+-- Strzałka wstecz
+function module.Back()
+	if module.CurrentIndex > 1 then
+		module.CurrentIndex -= 1
+		return module.History[module.CurrentIndex]
+	end
+	return nil
+end
+
+-- Strzałka w przód
+function module.Forward()
+	if module.CurrentIndex < #module.History then
+		module.CurrentIndex += 1
+		return module.History[module.CurrentIndex]
+	end
+	return nil
+end
+
+-- Aktualna strona
+function module.GetCurrentPage()
+	return module.History[module.CurrentIndex]
+end
+
+return module
