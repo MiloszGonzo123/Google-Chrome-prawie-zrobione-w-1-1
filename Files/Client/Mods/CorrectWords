@@ -1,0 +1,153 @@
+--[[
+
+skrypt który jest połączony z skryptem "Main", poprawia on tokeny i zwraca wyniki jeśli takie są
+
+--]]
+
+
+local AutoCorrect = {}
+
+-- === CONFIG ===
+AutoCorrect.SIMILARITY_THRESHOLD = 0.83
+
+local iscorrected = require(script.Parent.Parent.Data.Local.Booleans)
+
+local efhegd = require(script.Parent.words)
+local AutoCorrect = {}
+AutoCorrect.SIMILARITY_THRESHOLD = 0.83
+
+-- funkcja czeka, aż słownik zostanie w pełni załadowany
+function WaitUntilLoaded()
+	if not efhegd.loaded then
+		efhegd.startloading() -- uruchamiamy ładowanie jeśli jeszcze nie
+	end
+	while not efhegd.loaded do
+		task.wait(0.1)
+	end
+end
+
+WaitUntilLoaded()
+AutoCorrect.DICTIONARY = efhegd.dictionary
+print("[DEBUG] Dictionary size:", #AutoCorrect.DICTIONARY)
+
+do
+	local seen = {}
+	local unique = {}
+	for _, word in ipairs(AutoCorrect.DICTIONARY) do
+		local key = word:lower()
+		if not seen[key] then
+			seen[key] = true
+			table.insert(unique, word)
+		end
+	end
+	AutoCorrect.DICTIONARY = unique
+end
+
+
+-- === LEVENSHTEIN DISTANCE ===
+local function levenshtein(a, b)
+	local lenA, lenB = #a, #b
+	local matrix = {}
+	for i = 0, lenA do
+		matrix[i] = {}
+		matrix[i][0] = i
+	end
+	for j = 0, lenB do
+		matrix[0][j] = j
+	end
+	for i = 1, lenA do
+		for j = 1, lenB do
+			local cost = (a:sub(i,i) == b:sub(j,j)) and 0 or 1
+			matrix[i][j] = math.min(
+				matrix[i-1][j]+1,
+				matrix[i][j-1]+1,
+				matrix[i-1][j-1]+cost
+			)
+		end
+	end
+	return matrix[lenA][lenB]
+end
+
+-- === SIMILARITY (0–1) ===
+local function similarity(a, b)
+	local maxLen = math.max(#a, #b)
+	if maxLen == 0 then return 1 end
+	return 1 - levenshtein(a, b) / maxLen
+end
+
+-- === TOKENIZER ===
+local function tokenize(sentence)
+	local tokens = {}
+	for word in sentence:gmatch("%S+") do
+		table.insert(tokens, word)
+	end
+	return tokens
+end
+
+-- === CORRECT SINGLE TOKEN ===
+local function correctToken(token)
+	-- w correctToken
+	local lower = token:lower()
+	local bestScore = 0
+	local bestMatch = token
+
+	for _, dictWord in ipairs(AutoCorrect.DICTIONARY) do
+		if math.abs(#dictWord - #lower) <= 2 then 
+			local score = similarity(lower, dictWord:lower())
+			if score > bestScore then
+				bestScore = score
+				bestMatch = dictWord
+			end
+		end
+	end
+
+
+	if bestScore >= AutoCorrect.SIMILARITY_THRESHOLD then
+		return bestMatch
+	end
+
+	return token
+end
+
+local function count()
+	local count = 0
+	for _, v in ipairs(AutoCorrect.DICTIONARY) do
+		count += 1
+	end
+	task.wait() 
+	warn("[SYSTEM]: Dictionary Size Check: " .. count)
+end
+
+-- === PUBLIC FUNCTION (MODIFIED) ===
+function AutoCorrect.CorrectSentence(sentence)
+	wait("func")
+	local tokens = tokenize(sentence)
+	local corrected = {}
+	local anyChange = false -- Flaga detekcji modyfikacji
+
+	if iscorrected.HasCountedCorrectWorlds == false then
+		count()
+		iscorrected.HasCountedCorrectWorlds = true
+	end
+
+	for _, token in ipairs(tokens) do
+		local fixedToken = correctToken(token)
+
+		if fixedToken ~= token then
+			anyChange = true
+		end
+
+		table.insert(corrected, fixedToken)
+	end
+
+	if anyChange then
+		local resultString = table.concat(corrected, " ")
+		warn("[AUTOCORRECT]: " .. resultString)
+		return resultString
+	else
+		-- Brak modyfikacji -> Brak zwrotu danych
+		return nil
+	end
+end
+
+return AutoCorrect
