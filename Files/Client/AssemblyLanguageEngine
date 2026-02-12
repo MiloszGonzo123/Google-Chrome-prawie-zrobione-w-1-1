@@ -1,0 +1,209 @@
+--[[
+
+skrypt loklany który wykonuje skrypt strony, jest ona bardzo zabezpieczona przed nil / null
+
+--]]
+
+local module = {}
+
+local MainParent = script.Parent:FindFirstChild("site")
+
+-- ====== SILNIK ======
+local Engine = {}
+
+-- ====== GLOBAL STATE ======
+local GlobalVars = {}
+module.Restarting = false
+module.RestartToken = 0
+module._connections = {}
+module._lastCode = nil
+module.Cache = {}
+
+-- ====== EVALUATOR ======
+local function evaluate(expr, program)
+	if not expr or type(expr) ~= "table" then return nil end
+	local token = module.RestartToken
+	if module.Restarting then return end
+
+	if expr.t == "num" or expr.t == "str" then
+		return expr.v
+
+	elseif expr.t == "var" then
+		if program.functions and program.functions[expr.v:lower()] then
+			return Engine.executeSteps(nil, program.functions[expr.v:lower()].steps, program)
+		end
+		return GlobalVars[expr.v] or 0
+
+	elseif expr.op then
+		local a = evaluate(expr.a, program)
+		local b = evaluate(expr.b, program)
+		if token ~= module.RestartToken then return end
+
+		a = tonumber(a) or a
+		b = tonumber(b) or b
+
+		if expr.op == "+" then return a + b
+		elseif expr.op == "-" then return a - b
+		elseif expr.op == "*" then return a * b
+		elseif expr.op == "/" then return (b ~= 0 and a / b or 0)
+		elseif expr.op == ">" then return a > b
+		elseif expr.op == "<" then return a < b
+		elseif expr.op == "==" then return a == b
+		end
+	end
+end
+
+-- ====== EXECUTION CORE ======
+function Engine.executeSteps(site, steps, program)
+	if not steps then return nil end
+	local token = module.RestartToken
+	if module.Restarting then return end
+
+	for _, step in ipairs(steps) do
+		if token ~= module.RestartToken then return end
+
+		local op = step.op
+
+		if op == "print" then
+			print("🎄 [Page Log]:", evaluate(step.expr, program))
+
+		elseif op == "set" then
+			GlobalVars[step.var] = evaluate(step.expr, program)
+
+		elseif op == "wait" then
+			task.wait(step.time or 0)
+
+		elseif op == "ui" and site then
+			local target = site:FindFirstChild(step.target, true)
+			if target and target:IsA("GuiObject") then
+				target.Visible = (step.action == "show")
+			end
+
+		elseif op == "call" then
+			Engine.executeSteps(site, program.functions[step.name:lower()].steps, program)
+
+		elseif op == "return" then
+			return evaluate(step.expr, program)
+
+		elseif op == "loop" then
+			for _ = 1, step.count or 1 do
+				local result = Engine.executeSteps(site, step.body, program)
+				if result ~= nil then return result end
+			end
+
+		elseif op == "while" then
+			local safety = 0
+			while evaluate(step.condition, program) and safety < 1000 do
+				local result = Engine.executeSteps(site, step.body, program)
+				if result ~= nil then return result end
+				safety += 1
+				task.wait()
+			end
+
+		elseif op == "if" then
+			if evaluate(step.condition, program) then
+				local r = Engine.executeSteps(site, step.thenSteps, program)
+				if r ~= nil then return r end
+			elseif step.elseSteps then
+				local r = Engine.executeSteps(site, step.elseSteps, program)
+				if r ~= nil then return r end
+			end
+		end
+	end
+end
+
+-- ====== HANDLERS ======
+function Engine.setupHandlers(site, program)
+	if module.Restarting then return end
+
+	for _, handler in ipairs(program.handlers or {}) do
+		local target = site:FindFirstChild(handler.target, true)
+		if target and (target:IsA("TextButton") or target:IsA("ImageButton")) then
+			local conn = target.MouseButton1Click:Connect(function()
+				if module.Restarting then return end
+				Engine.executeSteps(site, handler.steps, program)
+			end)
+			table.insert(module._connections, conn)
+		end
+	end
+end
+
+-- ====== MAIN EXECUTION ======
+function Engine.HandleAllScriptCode(site, program)
+	GlobalVars = {}
+	if module.Restarting then return end
+
+	if program.globalSteps then
+		Engine.executeSteps(site, program.globalSteps, program)
+	end
+
+	Engine.setupHandlers(site, program)
+end
+
+-- ====== RESTART SYSTEM ======
+function module.RestartSite(mode)
+	module.Restarting = true
+	module.RestartToken += 1
+
+	-- kill handlers
+	for _, c in ipairs(module._connections) do
+		pcall(function() c:Disconnect() end)
+	end
+	module._connections = {}
+
+	-- SOFT RESTART
+	if mode == "soft" then
+		GlobalVars = {}
+
+		task.defer(function()
+			module.Restarting = false
+			if module._lastCode then
+				module.load(module._lastCode)
+			end
+		end)
+
+		-- HARD RESTART
+	elseif mode == "hard" then
+		GlobalVars = {}
+		module.Cache = {}
+
+		if MainParent then
+			for _, v in ipairs(MainParent:GetDescendants()) do
+				if v:IsA("GuiObject") then
+					v:Destroy()
+				end
+			end
+		end
+
+		task.defer(function()
+			module.Restarting = false
+			if module._lastCode then
+				module.load(module._lastCode)
+			end
+		end)
+	end
+end
+
+-- ====== LOADER ======
+function module.load(code)
+	if not code or code == "" then return end
+	module._lastCode = code
+
+	if not MainParent then
+		warn("[Load] Brak folderu 'site'")
+		return
+	end
+
+	local sites = MainParent:GetChildren()
+	if #sites ~= 1 then
+		warn("[Load] Nieprawidłowa liczba site")
+		return
+	end
+
+	local site = sites[1]
+	Engine.HandleAllScriptCode(site, code)
+
+	print("[Load] Site załadowany:", site.Name)
+end
+
+return module
