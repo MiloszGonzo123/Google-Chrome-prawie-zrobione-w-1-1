@@ -1,0 +1,379 @@
+--[[
+
+  główny klientowy skrypt od obsługi jego zapytań, wyszukiwania,keybinds, ui, ux
+
+-]]
+
+
+-- =============================
+-- SERVICES
+-- =============================
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpsService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
+
+-- =============================
+-- MODULES
+-- =============================
+local SearchHistory = require(script.Parent.Mods.SearchHistoryHandler)
+local LiteAI        = require(script.Parent.AIHandler)
+local Notification  = require(script.Parent.Mods.Nothification)
+local SitesHandler  = require(script.Parent.SitesHandlerViev)
+local ServerHandler = require(game.ReplicatedStorage.ServerData.Handler)
+local CorrectWords  = require(script.Parent.Mods.CorrectWords)
+local Errors        = require(script.Parent.Mods.error)
+local Capha         = require(script.Parent.Mods.Capha)
+local TabsService   = require(script.Parent.TabsMechanic)
+local ArrowService  = require(script.Parent.Mods.ArrowsHandler)
+local RestartService= require(script.Parent.Helper.Restart)
+
+local TabsFolder = script.Parent.Parent.up.Tabs
+
+local function connectTab(tab)
+	if not tab:IsA("Frame") then return end
+	if not tab:FindFirstChild("open") then return end
+	if not tab:FindFirstChild("exit") then return end
+
+	tab.open.MouseButton1Click:Connect(function()
+		TabsService.load(tab.Name)
+	end)
+
+end
+
+
+-- =============================
+-- LOG
+-- =============================
+local function NewEvent(name, desc, status, extra)
+	local efgsrhtdw = game:GetService("ReplicatedStorage").other.eventRequestVieveer
+	local time = os.time()
+
+	--efgsrhtdw:FireServer({
+	--	name = name,
+	--	desc = desc,
+	--	status = status,
+	--	extra = extra,
+	--	time = time
+	--})
+end
+
+local function newProcces(Data,time)
+	local da = script.proccestemplate:Clone()
+	da.Parent = script.Parent.Data.Procces
+	da.active.Value = true
+	da.Name = HttpsService:GenerateGUID(false)
+	da.Data.Value = Data
+	
+	return da
+end
+
+
+local function log(message, typ)
+	local par = script.Parent.Data.Logs
+	
+	if typ == 1 then
+		local newlog = Instance.new("StringValue")
+		newlog.Name = HttpsService:GenerateGUID(false)
+		newlog.Parent = par
+		newlog.Value = tostring(message)
+	end
+	if typ == 2 then
+		local newlog = Instance.new("NumberValue")
+		newlog.Name = HttpsService:GenerateGUID(false)
+		newlog.Parent = par
+		newlog.Value = tonumber(message)
+	end
+	if typ == 3 then
+		local newlog = Instance.new("Folder")
+		newlog.Name = "Log: " .. HttpsService:GenerateGUID(true)
+		newlog.Parent = par.other
+		
+		for _, v in pairs(message) do
+			local new = Instance.new("StringValue")
+			new.Name = HttpsService:GenerateGUID(false)
+			new.Parent = newlog
+			new.Value = tostring(v)
+		end
+	end
+end
+-- =============================
+-- TESTING
+-- =============================
+
+
+--local efaf = require(script.Parent["HTML-Encode"])
+--local testttt = script.Parent.Parent.Websites.testtttt
+--local loaddddddd = require(script.Parent.Parent.Websites.actualSerachWebsite.load)
+--local rebuild = require(script.Parent["HTML-Rebuilder"])
+--warn(efaf.Encode(testttt))
+--rebuild.Decode(efaf.Encode(testttt))
+
+
+
+
+
+-- Capha.capha()
+
+
+
+
+
+-- =============================
+-- UI REFERENCES
+-- =============================
+local root = script.Parent.Parent
+
+local searchFrame = root.searchresult
+local aiFrame     = searchFrame:FindFirstChild("WithAIDesc")
+
+local googleBox   = root.GoogleFirtsPage.t.TextBox
+local urlTextBox  = root.up.main.url.TextBox
+local resultBox   = searchFrame.t.TextBox
+
+local correctionButton = searchFrame:FindFirstChild("cortr")
+local correctionText   = searchFrame:FindFirstChild("cor")
+
+local refreshButton = root.up.main.redresh
+local clearHistory  = root.Websites.History.opts.clearsearchhistory
+
+-- =============================
+-- COOLDOWN HANDLER
+-- =============================
+local MAX_REQUESTS_PER_SECOND = 2
+local warns = 0
+local requestTimes = {} -- przechowuje timestampy ostatnich requestów
+
+local function canSendRequest()
+	local now = tick()
+
+	-- usuwamy stare timestampy (starsze niż 1 sekunda)
+	for i = #requestTimes, 1, -1 do
+		if now - requestTimes[i] > 1 then
+			table.remove(requestTimes, i)
+		end
+	end
+
+	-- sprawdzamy czy mamy miejsce
+	if #requestTimes >= MAX_REQUESTS_PER_SECOND then
+		return false
+	end
+
+	-- dodajemy nowy request
+	table.insert(requestTimes, now)
+	return true
+end
+
+
+
+-- =============================
+-- RESULT HANDLER
+-- =============================
+
+
+
+-- =============================
+-- UI HELPERS
+-- =============================
+local function toggleCorrectionUI(state)
+	searchFrame.cortr.Visible = state
+	searchFrame.cor.Visible  = state
+	searchFrame.lang.Visible = state
+
+	searchFrame.t.Position = state
+		and UDim2.new(0.117, 0, 0.039, 0)
+		or  UDim2.new(0.117, 0, 0.02, 0)
+end
+
+local function typewriter(label, text)
+	local abc = newProcces("typewriter //xpcall==false/curent; //.dat.start")
+	label.Text = ""
+	for _, token in ipairs(string.split(text, " ")) do
+		label.Text ..= (label.Text == "" and "" or " ") .. token
+		task.wait(math.clamp(#token * 0.015, 0.01, 0.1))
+	end
+	
+	abc:Destroy()
+end
+
+-- =============================
+-- INPUT SELECTION
+-- =============================
+local function getInput()
+	if urlTextBox.Text ~= "" then
+		local t = urlTextBox.Text
+		urlTextBox.Text = ""
+		return t, "url"
+	end
+
+	if googleBox.Text ~= "" then
+		local t = googleBox.Text
+		googleBox.Text = ""
+		return t, "google"
+	end
+
+	return resultBox.Text, "result"
+end
+
+
+-- =============================
+-- MAIN SEARCH FLOW
+-- =============================
+local function handleSearch(forcedInput)
+	if not canSendRequest() then
+		log("too many request", 1)
+		if warns < 3 then
+			warns = 0
+			Capha.capha()
+			NewEvent("Too Much Requests", "player has been requesting too much request, capha activated", 2, "")
+			log({"captcha", "bot detected!"}, 3)
+		end
+		
+		warns += 1
+		return
+	end
+	
+	local input, inputType
+
+	if forcedInput then
+		-- upewniamy się, że to string
+		if typeof(forcedInput) ~= "string" then
+			warn("handleSearch: forcedInput is not a string!", typeof(forcedInput))
+			NewEvent("ForcedInput Isn't a string", "error/input is: " .. typeof(forcedInput), 3, "")
+			return
+		end
+		input = forcedInput
+		inputType = "forced"
+	else
+		input, inputType = getInput()
+	end
+
+	-- usuwa whitespace na początku i końcu, zachowuje wszystkie specjalne znaki
+	input = input and input:match("^%s*(.-)%s*$")
+	if not input or input == "" then return end
+	
+	local ip = player:GetAttribute("FakeIP")
+
+	NewEvent("Searched", "player searched: " .. input .. ", with ip: " .. ip, 1, "")
+	
+
+	if inputType == "url" or inputType == "forced" then
+		SitesHandler.URL(input, ip)
+		return
+	end
+
+	root.GoogleFirtsPage.Visible = false
+	searchFrame.Visible = true
+
+	-- SPELLING CORRECTION
+	if not forcedInput then
+		local suggestion = CorrectWords.CorrectSentence(input)
+		if suggestion and suggestion ~= input then
+			toggleCorrectionUI(true)
+			correctionText.Text = suggestion
+			resultBox.Text = input
+			return
+		end
+	end
+
+
+
+	-- FINAL INPUT
+	toggleCorrectionUI(false)
+	resultBox.Text = input
+	SearchHistory.add(tostring(input))
+
+
+
+	-- AI PREP
+	if aiFrame then
+		aiFrame.Visible = true
+		aiFrame.AIViev.desc.Text = "AI is processing..."
+	end
+
+	task.spawn(function()
+		
+		
+
+		local ok, aiResponse = pcall(function()
+			return LiteAI.gen(input)
+		end)
+
+		if ok and aiResponse and aiResponse ~= "unknown" then
+			SitesHandler.Search(input, ip)
+			aiFrame.Visible = true
+			task.spawn(function()
+				LiteAI.anim()
+			end)
+			
+			task.wait(math.random(1,2))
+			
+			NewEvent("AI activation", "ai has been activated, generating response", 1, "")
+			
+			
+			task.spawn(typewriter, aiFrame.AIViev.desc, aiResponse)
+		else
+			if aiFrame then aiFrame.Visible = false end
+			script.Parent.Parent.searchresult.normal.Visible = true
+			SitesHandler.Search(input, ip)
+		end
+	end)
+end
+
+-- =============================
+-- EVENTS
+-- =============================
+clearHistory.MouseButton1Click:Connect(SearchHistory.Delete)
+
+if correctionButton then
+	correctionButton.MouseButton1Click:Connect(function()
+		local text = correctionText.Text
+		if not text or text == "" then return end
+
+		toggleCorrectionUI(false)
+		urlTextBox.Text = ""
+		googleBox.Text = ""
+		resultBox.Text = text
+
+		handleSearch(text)
+	end)
+end
+
+UserInputService.InputBegan:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.Return then
+		handleSearch()
+	end
+end)
+
+refreshButton.MouseButton1Up:Connect(function()
+	TweenService:Create(
+		refreshButton,
+		TweenInfo.new(0.6, Enum.EasingStyle.Quad),
+		{Rotation = refreshButton.Rotation + 360}
+	):Play()
+
+	for _, v in ipairs(root.Websites:GetChildren()) do
+		if v:IsA("Frame") then v.Visible = false end
+	end
+	
+	for _, v in root.Websites.err:GetChildren() do
+		if v and v:IsA("Frame") then v.Visible = false end
+	end
+	
+	RestartService.Restart(1)
+
+	--searchFrame.Visible = false
+	toggleCorrectionUI(false)
+	--root.GoogleFirtsPage.Visible = true
+end)
+
+
+-- istniejące taby
+for _, tab in TabsFolder:GetChildren() do
+	connectTab(tab)
+end
+
+-- nowe taby
+TabsFolder.ChildAdded:Connect(connectTab)
