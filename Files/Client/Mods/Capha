@@ -1,0 +1,147 @@
+--[[
+
+loklana capha do weryfikacji czy jst botem czy graczem
+
+--]]
+
+local module = {}
+
+local TS = game:GetService("TweenService")
+local Http = game:GetService("HttpService")
+
+local Frame = script.Parent.Parent.Parent.Capha
+local Sets = script:WaitForChild("Folder")
+
+local selected = {}
+local connections = {}
+local ResultEvent = Instance.new("BindableEvent")
+
+-- reset wizualny
+local function resetBlocks()
+	selected = {}
+	for _, block in ipairs(Frame.second.m:GetChildren()) do
+		if block:IsA("ImageLabel") then
+			block.ImageColor3 = Color3.fromRGB(255,255,255)
+		end
+	end
+end
+
+-- podpinanie klików
+local function setupBlocks()
+	for _, block in ipairs(Frame.second.m:GetChildren()) do
+		if block:IsA("ImageLabel") then
+			local btn = block:FindFirstChildWhichIsA("TextButton")
+			if not btn then continue end
+			if connections[block] then connections[block]:Disconnect() end
+
+			connections[block] = btn.MouseButton1Click:Connect(function()
+				if selected[block] then
+					selected[block] = nil
+					block.ImageColor3 = Color3.fromRGB(255,255,255)
+				else
+					selected[block] = true
+					block.ImageColor3 = Color3.fromRGB(0,170,255)
+				end
+			end)
+		end
+	end
+end
+
+-- losowanie zestawu advanced
+local function loadRandomSet()
+	for _, block in ipairs(Frame.second.m:GetChildren()) do
+		if block:IsA("ImageLabel") then
+			block:Destroy()
+		end
+	end
+	
+	local sets = Sets:GetChildren()
+	local pickedSet = sets[math.random(1, #sets)]
+	for _, img in ipairs(pickedSet:GetChildren()) do
+		if img:IsA("ImageLabel") then
+			img:Clone().Parent = Frame.second.m
+		end
+	end
+end
+
+-- confirm advanced
+Frame.second.act.MouseButton1Click:Connect(function()
+	local success = true
+	for _, block in ipairs(Frame.second.m:GetChildren()) do
+		if block:IsA("ImageLabel") then
+			local bool = block:FindFirstChildWhichIsA("BoolValue")
+			if not bool then
+				success = false
+				break
+			end
+			if bool.Value ~= (selected[block] ~= nil) then
+				success = false
+				break
+			end
+		end
+	end
+	ResultEvent:Fire(success)
+end)
+
+-- pokazanie advanced capha
+local function advancedCapha()
+	Frame.first.Visible = false
+	Frame.second.Visible = true
+
+	loadRandomSet()
+	resetBlocks()
+	setupBlocks()
+
+	-- blokujemy, aż gracz kliknie ACT
+	local result = ResultEvent.Event:Wait()
+	Frame.Visible = false
+	return result
+end
+
+-- główna funkcja
+function module.capha()
+	Frame.Visible = true
+	local load = Frame.first.loading
+
+	local bot = script.Parent.Parent.Data.Local.AllPlayerData.dat.bot.Value
+	
+	Frame.first.btn.MouseButton1Click:Connect(function()
+
+		if bot == false then
+			-- prosta CAPHA
+			load.Visible = true
+			Frame.first.succ.Visible = false
+			Frame.first.decline.Visible = false
+			TS:Create(load, TweenInfo.new(1.6, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut), {Rotation = 360}):Play()
+			task.wait(1.9)
+			load.Rotation = 0
+
+			load.Visible = false
+			Frame.first.succ.Visible = true
+			Frame.first.decline.Visible = false
+			task.wait(1)
+			Frame.Visible = false
+			return true
+		else
+			-- advanced CAPHA
+			load.Visible = true
+			Frame.first.succ.Visible = false
+			Frame.first.decline.Visible = false
+			TS:Create(load, TweenInfo.new(1.6, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut), {Rotation = 360}):Play()
+			task.wait(1.9)
+			load.Rotation = 0
+
+			load.Visible = false
+			Frame.first.decline.Visible = true
+			Frame.first.succ.Visible = false
+
+			Frame.first.code.Text = "RequestID: " .. Http:GenerateGUID(false)
+
+			local result = advancedCapha()
+			return result
+		end
+	end)
+
+end
+
+return module
