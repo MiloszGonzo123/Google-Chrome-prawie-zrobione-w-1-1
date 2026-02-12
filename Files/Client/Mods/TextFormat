@@ -1,0 +1,108 @@
+--[[
+
+w roblox nie ma zaznaczanie tekstu ze względu bezpieczeństwa, natomiast zrobiony skrypt do tej funkcji:
+
+--]]
+
+local Players = game:GetService("Players")
+local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
+
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+local options = playerGui:FindFirstChild("textproporties", true)
+
+local KOREKTA_X = 138
+local KOREKTA_Y = -4
+
+-- =====================================================
+-- OVERLAY FACTORY 
+-- =====================================================
+local function createOverlay(label)
+	local overlay = Instance.new("TextBox")
+	overlay.Name = "SelectionOverlay"
+	overlay.Size = UDim2.fromScale(1, 1)
+	overlay.Position = UDim2.new(0, 0, 0, 0)
+	overlay.BackgroundTransparency = 1
+	overlay.ZIndex = label.ZIndex + 10
+
+	overlay.RichText = true
+	overlay.Font = label.Font
+	overlay.FontFace = label.FontFace
+	overlay.Text = label.Text
+	overlay.TextSize = label.TextSize
+	overlay.TextColor3 = label.TextColor3
+	overlay.TextXAlignment = label.TextXAlignment
+	overlay.TextYAlignment = label.TextYAlignment
+
+	overlay.ClearTextOnFocus = false
+	overlay.TextEditable = false
+	overlay.Active = true
+	overlay.Selectable = false
+	overlay.AutoLocalize = false
+
+	return overlay
+end
+
+-- =====================================================
+-- GŁÓWNA LOGIKA DLA TEXTLABEL
+-- =====================================================
+local function InicjujLogikeTekstu(label)
+	if not label:IsA("TextLabel") then return end
+	if options and label:IsDescendantOf(options) then return end
+
+	label.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		if label:FindFirstChild("SelectionOverlay") then return end
+
+		if not options then
+			options = playerGui:FindFirstChild("textproporties", true)
+			if not options then return end
+		end
+
+		local overlay = createOverlay(label)
+		local prevTransparency = label.TextTransparency
+		label.TextTransparency = 1
+		overlay.Parent = label
+
+		local labelPos = label.AbsolutePosition
+		local labelHeight = label.AbsoluteSize.Y
+
+		local topGui = options:FindFirstAncestorOfClass("ScreenGui")
+		local inset = GuiService:GetGuiInset()
+		local yInset = (topGui and not topGui.IgnoreGuiInset) and inset.Y or 0
+
+		options.Position = UDim2.fromOffset(
+			labelPos.X + KOREKTA_X,
+			labelPos.Y + labelHeight - yInset + KOREKTA_Y
+		)
+		options.Visible = true
+
+		local conn
+		conn = UserInputService.InputBegan:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseButton1 then
+				if overlay.Parent then
+					label.TextTransparency = prevTransparency
+					options.Visible = false
+					overlay:Destroy()
+				end
+				conn:Disconnect()
+			end
+		end)
+	end)
+end
+
+-- =====================================================
+-- MONITORING GUI
+-- =====================================================
+
+-- Istniejące
+for _, gui in ipairs(playerGui:GetDescendants()) do
+	InicjujLogikeTekstu(gui)
+end
+
+-- Nowe
+playerGui.DescendantAdded:Connect(function(gui)
+	InicjujLogikeTekstu(gui)
+end)
