@@ -33,7 +33,7 @@ Skrypty lokalne odpowiadają za:
 - System cooldown i zabezpieczenia przed spamem
 - Integracja z modułem AI dla generowania opisów
 
-  ---
+---
 
 ### Instalacja / Użycie
 
