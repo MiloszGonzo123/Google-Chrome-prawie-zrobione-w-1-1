@@ -1,0 +1,187 @@
+--[[
+
+Skrypt który dekoduje skrypt gracza na 'assembly language',  by silniki gry wiedziały co zrobić.
+
+--]]
+local Decode = {}
+
+-- ====== KONFIG ======
+local LIMITS = {
+	maxSteps = 200,
+	maxFunctions = 20,
+	maxLoopCount = 20,
+	maxDepth = 10
+}
+
+-- ====== UTILS ======
+local function trim(s) return s:match("^%s*(.-)%s*$") end
+
+local function splitLines(src)
+	local t = {}
+	for line in src:gmatch("[^\r\n]+") do
+		table.insert(t, trim(line))
+	end
+	return t
+end
+
+local function showErrorToPlayer(msg)
+	print("[DECODE ERROR] " .. msg)  -- placeholder
+end
+
+local function safeCall(f,...)
+	local ok, err = xpcall(f,function(e) return debug.traceback(e) end,...)
+	if not ok then showErrorToPlayer(err) end
+	return ok, err
+end
+
+-- ====== EXPRESSION PARSER ======
+local PRECEDENCE = {["+"]=1, ["-"]=1, ["*"]=2, ["/"]=2, ["%"]=2}
+
+local function tokenizeExpr(expr)
+	local out,i={},1
+	while i<=#expr do
+		local c=expr:sub(i,i)
+		if c:match("%s") then i=i+1
+		elseif c:match("[%+%-%*/%%]") then table.insert(out,{t="op",v=c}); i=i+1
+		elseif c:match("[%d%.]") then
+			local j=i
+			while expr:sub(j,j):match("[%d%.]") do j=j+1 end
+			table.insert(out,{t="num",v=tonumber(expr:sub(i,j-1))})
+			i=j
+		elseif c:match("[%a_]") then
+			local j=i
+			while expr:sub(j,j):match("[%w_]") do j=j+1 end
+			table.insert(out,{t="var",v=expr:sub(i,j-1)})
+			i=j
+		else error("Bad char in expression: "..c) end
+	end
+	return out
+end
+
+local function parseExpression(expr)
+	local tokens = tokenizeExpr(expr)
+	local output, ops = {}, {}
+	for _,tk in ipairs(tokens) do
+		if tk.t=="num" or tk.t=="var" or tk.t=="str" then table.insert(output,tk)
+		else
+			while #ops>0 and PRECEDENCE[ops[#ops].v]>=PRECEDENCE[tk.v] do
+				table.insert(output, table.remove(ops))
+			end
+			table.insert(ops,tk)
+		end
+	end
+	while #ops>0 do table.insert(output, table.remove(ops)) end
+
+	local stack={}
+	for _,tk in ipairs(output) do
+		if tk.t~="op" then table.insert(stack,tk)
+		else
+			local b,a=table.remove(stack),table.remove(stack)
+			table.insert(stack,{t="op",op=tk.v,a=a,b=b})
+		end
+	end
+	return stack[1]
+end
+
+-- ====== INSTRUCTION PARSER ======
+local function parseInstruction(line,lineNo)
+	line = line:gsub("\t"," "):gsub("%s+"," ")
+	line = trim(line)
+
+	if line:match("^%-%-") then return nil end  -- komentarz
+
+	-- set var = expr
+	local v,expr=line:match("^set (%w+) = (.+)$")
+	if v then
+		local callName=expr:match("^call (%w+)$")
+		if callName then
+			return {op="set", var=v, expr={op="call", name=callName}}
+		else
+			return {op="set", var=v, expr=parseExpression(expr)}
+		end
+	end
+
+	-- wait
+	local t=line:match("^wait ([%d%.]+)$")
+	if t then return {op="wait", time=tonumber(t)} end
+
+	-- ui
+	local act,id=line:match("^(show|hide|toggle) panel (%w+)$")
+	if act then return {op="ui", action=act, target=id} end
+
+	-- call function
+	local fn=line:match("^call (%w+)$")
+	if fn then return {op="call", name=fn} end
+
+	-- print
+	local msg=line:match("^print (.+)$")
+	if msg then return {op="print", expr=parseExpression(msg)} end
+
+	-- return
+	local ret=line:match("^return (.+)$")
+	if ret then return {op="return", expr=parseExpression(ret)} end
+
+	error("Unknown instruction: "..line)
+end
+
+-- ====== MAIN DECODE ======
+function Decode.decode(source)
+	local ok, program = safeCall(function()
+		local lines = splitLines(source)
+		local stack,currentSteps=nil,nil
+		local stepsCount=0
+		local prog={handlers={},functions={},globalSteps={}}
+
+		local function push(s) table.insert(stack,currentSteps); currentSteps=s end
+		local function pop() currentSteps=table.remove(stack) end
+
+		for i,line in ipairs(lines) do
+			local l = trim(line:lower())
+
+			-- function
+			local fname = l:match("^function (%w+)$")
+			if fname then
+				if prog.functions[fname] then error("Function redefined: "..fname) end
+				if table.getn(prog.functions)>=LIMITS.maxFunctions then error("Too many functions") end
+				prog.functions[fname]={steps={}}
+				push(prog.functions[fname].steps)
+
+			elseif l:match("^on (%w+) (%w+)$") then
+				local ev,trg = l:match("^on (%w+) (%w+)$")
+				local h={event=ev,target=trg,steps={}}
+				table.insert(prog.handlers,h)
+				push(h.steps)
+
+			elseif l:match("^repeat (%d+) times$") then
+				local n=tonumber(l:match("^repeat (%d+) times$"))
+				if n>LIMITS.maxLoopCount then error("Bad loop count") end
+				local loop={op="loop",count=n,body={}}
+				if not currentSteps then error("Loop outside block") end
+				table.insert(currentSteps,loop)
+				push(loop.body)
+
+			elseif l=="end" then pop()
+			else
+				if not currentSteps then
+					-- instrukcja globalna
+					local step=safeCall(parseInstruction,line,i)
+					if step then table.insert(prog.globalSteps,step) end
+				else
+					local step=safeCall(parseInstruction,line,i)
+					if step then
+						table.insert(currentSteps,step)
+						stepsCount=stepsCount+1
+						if stepsCount>LIMITS.maxSteps then error("Program too large") end
+					end
+				end
+			end
+		end
+
+		if currentSteps~=nil then error("Unclosed block") end
+		return prog
+	end)
+
+	return ok and program or nil
+end
+
+return Decode
