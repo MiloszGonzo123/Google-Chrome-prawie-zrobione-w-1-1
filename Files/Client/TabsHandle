@@ -1,0 +1,105 @@
+--[[
+
+Skrypt lokalny który tworzy tab'y, otwiera je, i usuwa je.
+
+--]]
+
+local module = {}
+
+-- opts: {tabname="", image=<number>}
+function module.New(tabname, image, url)
+	local uptab = script.Parent.templates.TabTemplate:Clone()
+	local tab = script.Parent.templates.tab:Clone()
+	
+	uptab.Parent = script.Parent.Parent.up.Tabs
+	
+	
+	tab.Parent = script.Parent.Parent.tabs
+	tab.Name = tostring(tabname)
+	if tabname ~= nil then
+		uptab.TextLabel.Text = tostring(tabname)
+	end
+	
+	uptab.Name = tostring(tabname)
+	
+	if image ~= nil then
+		uptab.ImageLabel.Image = "rbxassetid://"..tostring(image)
+	end
+	
+	
+	tab.Content.URL.Value = tostring(url)
+	if tab.Content.URL.Value == "nil" then tab.Content.URL.Value = "About:Blank/NoMetadata" end
+	uptab.exit.MouseButton1Click:Connect(function()
+		module.deteletab(tabname)
+		return
+	end)
+	
+	return tab
+end
+
+function module.load(tabname)
+	
+	local a = nil
+
+	for _, vv in script.Parent.Parent.tabs:GetChildren() do
+		if vv and vv:IsA("Frame")then
+			if vv.Name == tabname then
+				a = vv
+			end
+		end
+	end
+	
+	if not a then return end
+	
+	for _, v in script.Parent.Parent.tabs:GetChildren() do
+		if v and v:IsA("Frame")then
+			if v.Name == tabname then
+				v.Visible = true
+			else
+				v.Visible = false
+			end
+		end
+	end
+	local urlbox = script.Parent.Parent.up.main.url.TextBox
+	local c = a.Content:FindFirstChild("URL")
+	if c then
+		urlbox.Text = c.Value
+
+	end
+	
+end
+
+function module.deteletab(name)
+	local a = nil
+	local count = 0
+	
+	for _, vv in script.Parent.Parent.tabs:GetChildren() do
+		if vv and vv:IsA("Frame")then
+			if vv.Name == name then
+				a = vv
+				count += 1
+			end
+		end
+	end
+	
+	
+	
+	
+	if a then
+		a:Destroy()
+		
+		
+		for _, v in script.Parent.Parent.up.Tabs:GetChildren() do
+			if v and v:IsA("Frame")then
+				if v.Name == name then
+					v:Destroy()
+				end
+			end
+		end
+		
+	
+	end
+	
+end
+
+return module
