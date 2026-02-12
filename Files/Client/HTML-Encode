@@ -1,0 +1,89 @@
+-- HTMLEncoder.lua
+
+--[[
+
+skrypt loakalny modółowy, który dekoduje całą strone na .json
+
+--]]
+
+local HTML = {}
+
+-- Funkcja pomocnicza: konwertuje instancję GUI na tabelę
+local function EncodeElement(element)
+	if not element or not element:IsA("GuiObject") then return nil end
+
+	local data = {}
+
+	-- Typ i nazwa
+	data.Type = element.ClassName
+	data.Name = element.Name
+
+	-- Pozycja i rozmiar
+	local pos = element.Position
+	local size = element.Size
+	data.Position = {X = pos.X.Scale, Y = pos.Y.Scale}
+	data.Size = {X = size.X.Scale, Y = size.Y.Scale}
+
+	-- Kolory i widoczność
+	data.BackgroundColor = {R = element.BackgroundColor3.R, G = element.BackgroundColor3.G, B = element.BackgroundColor3.B}
+	data.BackgroundTransparency = element.BackgroundTransparency
+	data.Visible = element.Visible
+	data.ZIndex = element.ZIndex
+	if element.BorderSizePixel then
+		data.BorderSizePixel = element.BorderSizePixel
+	end
+
+	-- TextLabel / TextButton
+	if element:IsA("TextLabel") or element:IsA("TextButton") then
+		data.Text = element.Text
+		data.TextColor = {R = element.TextColor3.R, G = element.TextColor3.G, B = element.TextColor3.B}
+		data.Font = element.Font
+		data.TextSize = element.TextSize
+		data.RichText = element.RichText
+		data.TextScaled = element.TextScaled
+		data.TextWrapped = element.TextWrapped
+	end
+
+	-- ImageLabel
+	if element:IsA("ImageLabel") then
+		data.Image = element.Image
+		data.ScaleType = element.ScaleType
+	end
+
+	-- Dzieci
+	local children = {}
+	for _, child in ipairs(element:GetChildren()) do
+		local encodedChild = EncodeElement(child)
+		if encodedChild then
+			table.insert(children, encodedChild)
+		end
+	end
+	if #children > 0 then
+		data.Children = children
+	end
+
+	return data
+end
+
+-- Funkcja główna: koduje całą stronę do tabeli
+function HTML.Encode(root)
+	if not root or not root:IsA("GuiObject") then
+		warn("[HTMLEncoder] Invalid root element")
+		return nil
+	end
+
+	local pageTable = {}
+	pageTable.Name = root.Name or "EncodedPage"
+	pageTable.Elements = {}
+
+	for _, element in ipairs(root:GetChildren()) do
+		local encoded = EncodeElement(element)
+		if encoded then
+			table.insert(pageTable.Elements, encoded)
+		end
+	end
+
+	return pageTable
+end
+
+return HTML
