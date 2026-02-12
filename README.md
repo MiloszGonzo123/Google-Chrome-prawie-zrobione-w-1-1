@@ -33,6 +33,8 @@ Skrypty lokalne odpowiadają za:
 - System cooldown i zabezpieczenia przed spamem
 - Integracja z modułem AI dla generowania opisów
 
+  ---
+
 ### Instalacja / Użycie
 
 aktualnie nie można instalować tego ręcznie w roblox studio, ponieważ ciągle są aktualizacje oraz trzeba przebudować całe UI(a jest tego ogrom)
