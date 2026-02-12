@@ -1,0 +1,94 @@
+--[[
+
+gdy gracz kliknie PPM, w tedy wyskoczą options (inspect, search...)
+
+--]]
+
+local mouse = game.Players.LocalPlayer:GetMouse()
+local UIS = game:GetService("UserInputService")
+
+local XCorrection = 0
+local YCorrection = 60
+
+local t = script.Parent.Parent.Parent.Parent:FindFirstChild("letclickproporties")
+
+local inspect = script.Parent.Parent.Parent.inspect
+
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	--if gameProcessed then return end -- stara wersja
+
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then -- prawy przycisk
+		local posX = mouse.X + XCorrection
+		local posY = mouse.Y + YCorrection
+
+		
+		if not t then return end
+
+		t.Visible = true
+		t.Position = UDim2.fromOffset(posX, posY)
+	end
+end)
+
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	--if gameProcessed then return end -- stara experymentalna wersja
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if t then
+			task.wait(0.2)
+			t.Visible = false
+		end 
+	end 
+end)
+
+inspect.exit.MouseButton1Click:Connect(function()
+	if inspect then
+		inspect.Visible = false
+	end
+end)
+
+
+
+local function getActualSite()
+	local web = script.Parent.Parent.Parent.Websites
+	local matchedweb = nil
+	local count = 0
+	
+	for _, site in web:GetChildren() do
+		if site and site:IsA("Frame") then
+			if site.Visible == true then
+				matchedweb = site
+				count += 1
+				break
+			end
+		end
+	end
+	
+	for _, site in web.actualSerachWebsite.site:GetChildren() do
+		if site and site:IsA("Frame") then
+			matchedweb = site
+			count += 1
+			break
+		end		
+	end
+	
+	if count > 0 then
+		if count >= 1 then  return end
+		if matchedweb == nil then return end
+		
+		if matchedweb then
+			return matchedweb
+		end
+	end 
+end
+
+
+t.inpect.MouseButton1Click:Connect(function()
+	local site = getActualSite()
+	--if not site then return end -- stara wersja
+	
+	
+	if inspect then
+		inspect.Visible = true
+		
+	end
+end)
+
