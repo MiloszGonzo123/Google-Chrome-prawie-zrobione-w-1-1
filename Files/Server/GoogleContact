@@ -1,0 +1,142 @@
+local event = game.ReplicatedStorage:WaitForChild("ClientRequestGoogleContact")
+
+-- ===== SŁOWNIK (MINIMALNY, ALE SKUTECZNY) =====
+local COMMON_WORDS = {
+	"i","am","im","ive","cant","cannot","dont","doesnt","didnt","wont",
+	"have","has","had","need","want","trying","try",
+
+	"problem","issue","bug","error","glitch","crash","freeze","lag","laggy",
+	"broken","stuck","fail","failed","failing","not","working","works",
+
+	"game","server","client","update","patch","version","join","load","loading",
+	"start","open","close","play","playing","rejoin","reconnect",
+
+	"pc","computer","laptop","windows","mac","mobile","phone","android","ios",
+	"tablet","console","xbox","playstation",
+
+	"after","before","when","while","since","every","always","sometimes",
+	"today","yesterday","now",
+
+	"help","support","report","reported","fix","fixed","fixing","please",
+	"cant","unable",
+
+	"click","press","move","jump","shoot","open","close","buy","sell",
+	"equip","use","spawn","respawn","die","death",
+
+	"disconnect","disconnected","timeout","ping","latency","fps","drop",
+	"network","internet","connection"
+}
+
+
+-- ===== NARZĘDZIA =====
+
+local function vowelRatio(text)
+	local v, l = 0, 0
+	for c in text:lower():gmatch(".") do
+		if c:match("%a") then
+			l += 1
+			if c:match("[aeiouy]") then v += 1 end
+		end
+	end
+	if l == 0 then return 0 end
+	return v / l
+end
+
+local function entropy(text)
+	local freq = {}
+	for c in text:gmatch(".") do
+		freq[c] = (freq[c] or 0) + 1
+	end
+	local h = 0
+	for _, count in pairs(freq) do
+		local p = count / #text
+		h -= p * math.log(p, 2)
+	end
+	return h
+end
+
+local function hasDictionaryWord(text)
+	text = text:lower()
+	for _, w in ipairs(COMMON_WORDS) do
+		if text:find("%f[%a]" .. w .. "%f[%A]") then
+			return true
+		end
+	end
+	return false
+end
+
+local function keyboardSmash(text)
+	text = text:lower()
+	return text:find("asdf") or text:find("qwer") or text:find("zxcv")
+end
+
+-- ===== ANALIZA POLE =====
+
+local function analyzeText(text)
+	local score = 0
+	local reasons = {}
+
+	if #text < 4 then
+		return 0, reasons -- krótkie teksty nie są karane
+	end
+
+	if vowelRatio(text) < 0.22 then
+		score += 3
+		table.insert(reasons, "lowVowels")
+	end
+
+	if entropy(text) > 4.3 then
+		score += 4
+		table.insert(reasons, "highEntropy")
+	end
+
+	if not hasDictionaryWord(text) then
+		score += 2
+		table.insert(reasons, "noWords")
+	end
+
+	if keyboardSmash(text) then
+		score += 4
+		table.insert(reasons, "keyboardSmash")
+	end
+
+	return score, reasons
+end
+
+-- ===== EVENT =====
+
+event.OnServerEvent:Connect(function(plr, data)
+	if typeof(data) ~= "table" then return end
+
+	local totalScore = 0
+	local reasons = {}
+
+	if typeof(data.message) == "string" then
+		local s, r = analyzeText(data.message)
+		totalScore += s
+		for _, reason in ipairs(r) do
+			table.insert(reasons, "message:" .. reason)
+		end
+	else
+		totalScore += 3
+	end
+
+	-- USERNAME (łagodnie)
+	if typeof(data.username) == "string" then
+		local s = analyzeText(data.username)
+		totalScore += s * 0.5
+	end
+
+
+	if totalScore >= 7 then
+		warn("🚫 ODRZUCONO – BEŁKOT")
+		return
+	end
+
+	print("✅ ZGŁOSZENIE PRZYJĘTE")
+
+
+	-- DALSZA CZĘŚĆ ZEPSUTA
+
+
+end)
