@@ -1,0 +1,44 @@
+--[[
+
+skrypt generujący fałszywy ip dla każdego gracza w grze
+
+--]]
+
+local DataStoreService = game:GetService("DataStoreService")
+local IPStore = DataStoreService:GetDataStore("PlayerFakeIPs")
+
+local function GenerateIP()
+	return string.format("%d.%d.%d.%d.%d.%d",
+		math.random(1, 254),
+		math.random(1, 254),
+		math.random(1, 254),
+		math.random(1, 254),
+		math.random(1, 254),
+		math.random(1, 254)
+	)
+end
+
+game.Players.PlayerAdded:Connect(function(player)
+	local saved = IPStore:GetAsync(player.UserId)
+	
+	if saved then
+		player:SetAttribute("FakeIP", saved)
+		return
+	end
+	
+	local newIP = GenerateIP()
+	
+	IPStore:SetAsync(player.UserId, newIP)
+	player:SetAttribute("FakeIP", newIP)
+	
+	warn(saved)
+	warn(newIP)
+end)
+
+local rgd=game:GetService("ReplicatedStorage").other.eventRequestVieveer
+local rsgs =game:GetService("ReplicatedStorage").other.eventVieverAdd
+
+rgd.OnServerEvent:Connect(function(plr, dat)
+	warn("Event received from", plr.Name, ":", dat)
+	rsgs:FireClient(plr, dat)
+end)
