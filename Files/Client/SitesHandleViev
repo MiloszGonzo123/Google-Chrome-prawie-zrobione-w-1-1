@@ -1,0 +1,246 @@
+--[[
+
+jeden z głównych skryptów lokalnych: handluje wyświetlanie wyników i stron, oraz podawanie dalej wyników z url lub search 
+
+--]]
+
+local module = {}
+
+local errorFrame = script.Parent.Parent.Websites.err["400"]
+local Err404 = script.Parent.Parent.Websites.err["404"]
+local errs = script.Parent.Parent.Websites.err
+local searchResultFrame = script.Parent.Parent.searchresult
+
+local currentSessionSites = {} -- Tu będziemy trzymać strukturę stron
+
+local https = game:GetService("HttpService")
+
+local errorMushRequests = script.Parent.Parent
+local Engine = require(script.Parent.Parent.Websites.actualSerachWebsite.load);
+local ArrowService  = require(script.Parent.Mods.ArrowsHandler)
+
+local rebuilder = require(script.Parent["HTML-Rebuilder"])
+local connected = false
+
+
+local function Log(desc)
+	local logs = script.Parent.Data.Logs
+
+	local new = Instance.new("Folder")
+	new.Parent = logs
+	new.Name = tostring(os.time())
+
+	local msg = Instance.new("StringValue")
+	msg.Parent = new
+	msg.Value = desc
+end
+
+local reque = game:GetService("ReplicatedStorage").other.ops.unautorizedTryed
+
+function module.Decode(payload)
+	if not payload or not payload.results then return end
+
+	local results = payload.results
+	currentSessionSites = results
+	local searchLog = script.Parent.Data.Logs.results
+
+	
+	local targetContainer
+	if searchResultFrame.WithAIDesc.Visible then
+		targetContainer = searchResultFrame.WithAIDesc
+	elseif searchResultFrame.WithGraph.Visible then
+		targetContainer = searchResultFrame.WithGraph
+	else
+		targetContainer = searchResultFrame.normal
+	end
+
+	-- 2. CZYŚCIMY TYLKO TEN KONTENER
+	for _, v in targetContainer:GetChildren() do
+		if v:IsA("Frame") and v.Name ~= "AIViev" and v.Name ~= "imgs" then
+			v:Destroy()
+		end
+	end
+
+	-- 3. GENERUJEMY WYNIKI
+	for i, site in ipairs(results) do
+		local key = "s" .. i
+		local template = script.normalSiteTemplate:Clone()
+		template.Name = key
+		template.Parent = targetContainer
+
+		template.content.url.Value = site.dat.url
+		template.nam.Text = site.extradata.name
+		template.desc.Text = site.extradata.description
+		template.img.Image = (site.extradata.icon ~= "") and site.extradata.icon or "rbxassetid://0"
+	
+		template.Visible = true
+
+		template.btnSite.MouseButton1Click:Connect(function()
+			print("Kliknięto w stronę: " .. site.dat.url)
+			module.URL(site.dat.url, 1) -- '1' to Twoje testowe IP
+		end)
+	end
+
+	return results
+end
+
+local returnevent = game:GetService("ReplicatedStorage").Search["return"]
+
+function module.Search(input, requesterIP)
+	local request = game:GetService("ReplicatedStorage").Search.request
+	request:FireServer(input)
+end
+
+returnevent.OnClientEvent:Connect(function(data)
+	if not data then return end
+	
+	warn(data)
+
+	if data == 500 then
+
+		warn("SERWER PADŁ")
+		for _, v in script.Parent.Parent.Websites:GetDescendants() do
+			if v and v:IsA("Frame") then
+
+				v.Visible = false
+
+			end
+		end
+
+		script.Parent.Parent.Websites.err["500"].Visible = true
+		return
+	end
+	
+	if data == 503 then
+		warn("SERWER: 503 MAINTENANCE")
+		for _, v in script.Parent.Parent.Websites:GetDescendants() do
+			if v:IsA("Frame") then
+				v.Visible = false
+			end
+		end
+		script.Parent.Parent.Websites.err["503"].Visible = true
+		return
+	end
+
+
+	if typeof(data) == "table" and data.results then
+		module.Decode(data) -- Tylko jeśli mamy tabelę z wynikami
+	end
+end)
+
+local urlrequest = game:GetService("ReplicatedStorage").Search.URL
+local urlaccepted = game:GetService("ReplicatedStorage").Search.URLreturn
+
+function module.FastSearchByURL(input, requesterIP)
+	if not input or not requesterIP then
+		return
+	end
+	
+	urlrequest:FireServer(input, requesterIP)
+end
+
+urlaccepted.OnClientEvent:Connect(function(dat)
+	warn(dat)
+	if not dat then 
+		warn("DNS: 404 - not found")
+		Err404.Visible = true
+		return 
+	end
+	if dat == 502 then
+		warn("DNS: 502 - error")
+		errs["502"].Visible = true
+		return
+	end
+	if dat == 503 then
+		warn("DNS: 503 - error")
+		errs["503"].Visible = true 
+		return
+	end
+	
+	Log("site with url btn founded")
+
+	--// budowanie ui
+	
+	for _, site in script.Parent.Parent.Websites.actualSerachWebsite.site:GetChildren() do
+		if site and site:IsA("Frame") then
+			site:Destroy()
+		end
+	end
+	
+	script.Parent.Parent.searchresult.Visible = false
+	script.Parent.Parent.searchresult.normal.Visible = false
+	script.Parent.Parent.searchresult.WithAIDesc.Visible = false
+	script.Parent.Parent.searchresult.WithGraph.Visible = false
+	
+	ArrowService.Navigate(dat.dat.url)
+	
+	rebuilder.Decode(dat.structure.html, script.Parent.Parent.Websites.actualSerachWebsite.site)
+	
+	
+	
+
+	-- Ustawiamy tekst w pasku na to, co wróciło z serwera
+	local urlBox = script.Parent.Parent.up.main.url.TextBox
+	urlBox.Text = dat.dat.url
+
+
+end)
+
+
+function module.URL(DomainName, requesterIP)
+	local t1 = script.Parent.Parent.up.main.url.TextBox
+	local Websites = script.Parent.Parent.Websites
+
+	-- 1. Szukamy lokalnie
+	local matchedFrame = nil
+	for _, page in ipairs(Websites:GetChildren()) do
+		if page:IsA("Frame") and page:FindFirstChild("Content") then
+			local val = page.Content:FindFirstChild("Content")
+			if val and val.Value:lower():gsub("%s+", "") == DomainName:lower():gsub("%s+", "") then
+				
+				if val.Value == "www.cyberoperations.net/dashboard" then
+					script.Parent.Parent.Websites.err["403-ClassifiedServer"].Visible = true
+					reque:FireServer("unautorized")
+					return
+				end
+				matchedFrame = page
+				break
+			end
+		end
+	end
+
+	-- 2. Jeśli jest lokalnie - wyświetlamy
+	if matchedFrame then
+		for _, v in pairs(Websites:GetChildren()) do
+			if v:IsA("Frame") then v.Visible = (v == matchedFrame) end
+		end
+		t1.Text = matchedFrame.Content.Content.Value
+		return
+	end
+
+	-- 3. Jeśli nie ma lokalnie - wysyłamy prośbę o dane URL
+	module.FastSearchByURL(DomainName, requesterIP)
+end
+
+function module.connectButtons(container, ip)
+	for _, v in pairs(container:GetChildren()) do
+		if v:IsA("Frame") and v.Name ~= "AIViev" and v.Name ~= "imgs" then
+			local content = v:FindFirstChild("content")
+			if not content then continue end
+
+			local urlValue = content:FindFirstChild("url")
+			if not urlValue then continue end
+
+			local url = urlValue.Value
+			if url == "" then continue end
+
+			v.btnSite.MouseButton1Click:Connect(function()
+				module.URL(url, ip)
+			end)
+		end
+	end
+end
+
+
+
+return module
