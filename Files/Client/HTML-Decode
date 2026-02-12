@@ -1,0 +1,132 @@
+--[[
+
+tworzy strone z tabeli json, główny skrypt całej infrastruktury klienta, bez niego nie ma stron
+
+-]]
+
+local HTML = {}
+local HttpService = game:GetService("HttpService")
+
+HTML.LastCode = nil
+HTML.LatParent = nil
+
+-- Funkcja pomocnicza: bezpieczne tworzenie elementu
+local function CreateElement(data, parent)
+	if not data or type(data) ~= "table" then return end
+
+	local success, element = pcall(function()
+		local Type = data.Type or "Frame"
+		local newObj = Instance.new(Type)
+
+		-- 1. POZYCJA I ROZMIAR 
+		local pos = data.Position or {X = 0, Y = 0}
+		local size = data.Size or {X = 0, Y = 0}
+		newObj.Position = UDim2.new(pos.X or 0, 0, pos.Y or 0, 0)
+		newObj.Size = UDim2.new(size.X or 0, 0, size.Y or 0, 0)
+
+		-- 2. KOLORY 
+		local bg = data.BackgroundColor or {R = 1, G = 1, B = 1}
+		newObj.BackgroundColor3 = Color3.new(bg.R or 1, bg.G or 1, bg.B or 1)
+		newObj.BackgroundTransparency = data.BackgroundTransparency or 0
+
+		-- 3. TEKST I CZCIONKI 
+		if newObj:IsA("TextLabel") or newObj:IsA("TextButton") then
+			newObj.Text = data.Text or ""
+			local txtCol = data.TextColor or {R = 0, G = 0, B = 0}
+			newObj.TextColor3 = Color3.new(txtCol.R or 0, txtCol.G or 0, txtCol.B or 0)
+			newObj.TextScaled = data.TextScaled or false
+			newObj.TextSize = data.TextSize or 14
+			-- Jeśli font jest null lub błąd, ustawiamy domyślny
+			newObj.Font = (data.Font and typeof(data.Font) == "number") and data.Font or Enum.Font.SourceSans
+		end
+
+		-- 4. OBRAZY
+		if newObj:IsA("ImageLabel") or newObj:IsA("ImageButton") then
+			newObj.Image = data.Image or ""
+		end
+
+		newObj.Name = data.Name or Type
+		newObj.Visible = (data.Visible ~= false)
+		newObj.Parent = parent
+
+		-- 5. DZIECI
+		if data.Children and type(data.Children) == "table" then
+			for _, childData in ipairs(data.Children) do
+				CreateElement(childData, newObj)
+			end
+		end
+
+		return newObj
+	end)
+
+	if not success then
+		warn("[HTML-Error] Nie udało się stworzyć elementu: " .. tostring(element))
+	end
+end
+
+function HTML.Restart()
+	if not HTML.LastCode or not HTML.LatParent then
+		warn("Błąd: Nie można wykonać restartu - brak poprzedniego stanu.")
+		return
+	end
+	
+	
+	
+	HTML.Decode(HTML.LastCode, HTML.LatParent)
+end
+
+-- FUNKCJA GŁÓWNA
+function HTML.Decode(payload, parent)
+	if not payload then warn("Błąd: Payload jest pusty!") return end
+
+	-- 1. Wydobycie surowego tekstu HTML z paczki serwera
+	local rawHtml = (type(payload) == "table" and payload.structure) and payload.structure.html or payload
+
+	local pageTable
+	if type(rawHtml) == "string" then
+		local ok, result = pcall(function() return HttpService:JSONDecode(rawHtml) end)
+		if not ok then 
+			warn("Krytyczny błąd: To nie jest poprawny JSON! Treść: " .. tostring(rawHtml))
+			return 
+		end
+		pageTable = result
+	else
+		pageTable = rawHtml
+	end
+
+	while pageTable and pageTable[1] and type(pageTable[1]) == "table" and not pageTable.Elements do
+		pageTable = pageTable[1]
+	end
+
+	if not pageTable or type(pageTable) ~= "table" then
+		warn("Błąd: Po odkodowaniu nie otrzymano poprawnej tabeli strony.")
+		return
+	end
+
+	-- 3. TWORZENIE ROOT FRAME (Baza strony)
+	local rootFrame = Instance.new("Frame")
+	rootFrame.Name = pageTable.Name or "DecodedPage"
+	rootFrame.Size = UDim2.new(0, 1215,0, 607) -- ROZMIAR 100% KONTENERA
+	rootFrame.Position = UDim2.new(0, 0,0.105, 0)
+	rootFrame.BackgroundTransparency = 1
+	rootFrame.BorderSizePixel = 0
+	rootFrame.Parent = parent
+
+	-- 4. BUDOWANIE ELEMENTÓW
+	
+	HTML.LastCode = payload
+	HTML.LatParent = parent
+	
+	if pageTable.Elements and type(pageTable.Elements) == "table" then
+		warn("Budowanie strony: " .. tostring(pageTable.Name))
+		for _, elementData in ipairs(pageTable.Elements) do
+			CreateElement(elementData, rootFrame)
+		end
+	else
+		warn("Błąd: Tabela nie posiada pola 'Elements'!")
+	end
+
+	return rootFrame
+end
+
+return HTML
